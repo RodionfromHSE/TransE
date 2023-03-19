@@ -63,6 +63,30 @@ class TransE(nn.Module):
         new_tail[~mask] = torch.randint(self.n_nodes, size=((~mask).sum(),),)
         
         return new_head, rel, new_tail
+    
+    @torch.no_grad()
+    def test(self, head_index: Tensor, rel_index: Tensor, tail_index: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        @param head_index: head node index
+        @param rel_index: relation type index
+        @param tail_index: tail node index
+        @return: tuple hit@10 and mean rank 
+        """
+        mean_ranks, hits_at_k = [], []
+        for i in range(head_index.size(0)):
+            h, r, t = head_index[i], rel_index[i], tail_index[i]
+            tail_indices = torch.arange(self.n_nodes)
+            scores = self(h.expand_as(tail_indices), r.expand_as(tail_indices), tail_indices)
+            # nonzero() returns the indices of the elements that are non-zero
+            # view(-1) returns a new tensor with the same data as the self tensor but of a different shape
+            # int() converts the tensor to a Python number
+            rank = int((scores.argsort(descending=True) == t).nonzero().view(-1))
+            mean_ranks.append(rank)
+            hits_at_k.append(rank < 10)
+
+        mean_rank = torch.tensor(mean_ranks, dtype=torch.float).mean()
+        hits_at_k = torch.tensor(hits_at_k).sum() / len(hits_at_k)
+        return hits_at_k, mean_rank 
 
 
     def forward(self, head_index: Tensor, rel_type: Tensor, tail_index: Tensor) -> Tensor:
@@ -72,16 +96,16 @@ class TransE(nn.Module):
         @param tail_index: tail node index
         @return: output of the model
         """
-
+        # Get embeddings
         head_emb = self.node_emb(head_index)
         rel_emb = self.rel_emb(rel_type)
         tail_emb = self.node_emb(tail_index)
-
-        head_emb = F.normalize(head_emb, p=self.p_norm, dim=-1)
+         
+        head_emb = F.normalize(head_emb, p=self.p_norm, dim=-1) # h = h / ||h||
         tail_emb = F.normalize(tail_emb, p=self.p_norm, dim=-1)
+        # Calculate distance (dissimilarity measure)
+        return torch.norm(head_emb + rel_emb - tail_emb, p=self.p_norm, dim=-1) # ||h + r - t||_{p_norm}
 
-        return F.normalize(head_emb + rel_emb - tail_emb, p=self.p_norm, dim=-1) # Get the distance
-    
     def loss(self, head_index: Tensor, rel_type: Tensor, tail_index: Tensor) -> Tensor:
         """
         @param head_index: head node index
@@ -92,5 +116,6 @@ class TransE(nn.Module):
         pos_score = self(head_index, rel_type, tail_index)
         neg_score = self(*self.random_sample(head_index, rel_type, tail_index))
 
-        return F.margin_ranking_loss(pos_score, neg_score, target=torch.zeros_like(pos_score), margin=self.margin)
+        # Formula: [margin - target * (pos_score + neg_score)]_+
+        return F.margin_ranking_loss(pos_score, neg_score, target=torch.ones_like(pos_score), margin=self.margin)
     

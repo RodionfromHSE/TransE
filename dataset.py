@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 
 
+
 class Triple:
     def __init__(self, head, tail, relation):
         """
