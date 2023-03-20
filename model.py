@@ -103,8 +103,8 @@ class TransE(nn.Module):
          
         head_emb = F.normalize(head_emb, p=self.p_norm, dim=-1) # h = h / ||h||
         tail_emb = F.normalize(tail_emb, p=self.p_norm, dim=-1)
-        # Calculate distance (dissimilarity measure)
-        return torch.norm(head_emb + rel_emb - tail_emb, p=self.p_norm, dim=-1) # ||h + r - t||_{p_norm}
+        # Calculate *negative* dissimilarity measure. The larger the value, the more similar the triple is.
+        return -torch.norm(head_emb + rel_emb - tail_emb, p=self.p_norm, dim=-1) # ||h + r - t||_{p_norm}
 
     def loss(self, head_index: Tensor, rel_type: Tensor, tail_index: Tensor) -> Tensor:
         """
