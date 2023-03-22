@@ -2,7 +2,6 @@ import torch
 from torch.utils.data import Dataset
 
 
-
 class Triple:
     def __init__(self, head, tail, relation):
         """
@@ -37,3 +36,4 @@ class WN18RR(Dataset):
             return self.triples[idx].to_tuple()
         tuples = [t.to_tuple() for t in self.triples[idx]]
         return tuples
+    

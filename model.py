@@ -41,9 +41,9 @@ class TransE(nn.Module):
         """
         b = 6.0 / (self.emb_size ** 0.5)
         self.node_emb.weight.data.uniform_(-b, b)
-
         self.rel_emb.weight.data.uniform_(-b, b)
-        F.normalize(self.rel_emb.weight, p=self.p_norm, dim=-1, out=self.rel_emb.weight)
+        # Note: use out parameter to differentiable normalize
+        F.normalize(self.rel_emb.weight.data, p=self.p_norm, dim=-1, out=self.rel_emb.weight.data)
 
     @torch.no_grad()
     def random_sample(self, head: Tensor, rel: Tensor, tail: Tensor) -> tuple[Tensor, Tensor, Tensor]:
@@ -80,12 +80,12 @@ class TransE(nn.Module):
             # nonzero() returns the indices of the elements that are non-zero
             # view(-1) returns a new tensor with the same data as the self tensor but of a different shape
             # int() converts the tensor to a Python number
-            rank = int((scores.argsort(descending=True) == t).nonzero().view(-1))
+            rank = int((scores.argsort(descending=False) == t).nonzero().view(-1))
             mean_ranks.append(rank)
             hits_at_k.append(rank < 10)
 
         mean_rank = torch.tensor(mean_ranks, dtype=torch.float).mean()
-        hits_at_k = torch.tensor(hits_at_k).sum() / len(hits_at_k)
+        hits_at_k = torch.tensor(hits_at_k).mean()
         return hits_at_k, mean_rank 
 
 
@@ -102,9 +102,9 @@ class TransE(nn.Module):
         tail_emb = self.node_emb(tail_index)
          
         head_emb = F.normalize(head_emb, p=self.p_norm, dim=-1) # h = h / ||h||
-        tail_emb = F.normalize(tail_emb, p=self.p_norm, dim=-1)
-        # Calculate *negative* dissimilarity measure. The larger the value, the more similar the triple is.
-        return -torch.norm(head_emb + rel_emb - tail_emb, p=self.p_norm, dim=-1) # ||h + r - t||_{p_norm}
+        tail_emb = F.normalize(tail_emb, p=self.p_norm, dim=-1) # t = t / ||t||
+        
+        return torch.norm(head_emb + rel_emb - tail_emb, p=self.p_norm, dim=-1) # ||h + r - t||_{p_norm}
 
     def loss(self, head_index: Tensor, rel_type: Tensor, tail_index: Tensor) -> Tensor:
         """
@@ -113,9 +113,10 @@ class TransE(nn.Module):
         @param tail_index: tail node index
         @return: Margin-based ranking loss
         """
+
         pos_score = self(head_index, rel_type, tail_index)
         neg_score = self(*self.random_sample(head_index, rel_type, tail_index))
 
-        # Formula: [margin - target * (pos_score + neg_score)]_+
-        return F.margin_ranking_loss(pos_score, neg_score, target=torch.ones_like(pos_score), margin=self.margin)
+        # Formula: max(0, margin - target * (neg_score - pos_score))
+        return F.margin_ranking_loss(neg_score, pos_score, target=torch.ones_like(pos_score), margin=self.margin) 
     
