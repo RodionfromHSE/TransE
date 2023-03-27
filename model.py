@@ -85,7 +85,7 @@ class TransE(nn.Module):
             hits_at_k.append(rank < 10)
 
         mean_rank = torch.tensor(mean_ranks, dtype=torch.float).mean()
-        hits_at_k = torch.tensor(hits_at_k).mean()
+        hits_at_k = torch.tensor(hits_at_k, dtype=torch.float).mean()
         return hits_at_k, mean_rank 
 
 
